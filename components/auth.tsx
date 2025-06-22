@@ -1,748 +1,542 @@
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+'use client'
+
+import { useState } from 'react'
+import { usePostHog } from 'posthog-js/react'
+import { toast } from '@/components/ui/use-toast'
+import { Icons } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
-import { cn } from '@/lib/utils'
-import { Provider, SupabaseClient } from '@supabase/supabase-js'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { validateEmail } from '@/app/actions/validate-email'
+import { Phone } from 'lucide-react'
 import {
-  AlertCircle,
-  CheckCircle2,
-  KeyRound,
-  Loader2,
-  Mail,
-} from 'lucide-react'
-import React, { useCallback, useEffect, useState } from 'react'
-import * as SimpleIcons from 'simple-icons'
-
-const VIEWS = {
-  SIGN_IN: 'sign_in',
-  SIGN_UP: 'sign_up',
-  FORGOTTEN_PASSWORD: 'forgotten_password',
-  MAGIC_LINK: 'magic_link',
-  UPDATE_PASSWORD: 'update_password',
-} as const
-
-export type ViewType = (typeof VIEWS)[keyof typeof VIEWS]
-
-type RedirectTo = undefined | string
+  auth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+  sendPasswordResetEmail,
+  sendSignInLinkToEmail,
+  updateProfile,
+  googleProvider,
+  isFirebaseEnabled,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  type ConfirmationResult
+} from '@/lib/firebase'
 
 export interface AuthProps {
-  supabaseClient: SupabaseClient
-  socialLayout?: 'horizontal' | 'vertical'
-  providers?: Provider[]
-  view?: ViewType
-  redirectTo?: RedirectTo
-  onlyThirdPartyProviders?: boolean
-  magicLink?: boolean
-  onSignUpValidate?: (email: string, password: string) => Promise<boolean>
-  metadata?: Record<string, any>
+  onClose?: () => void
 }
 
-interface SubComponentProps {
-  supabaseClient: SupabaseClient
-  setAuthView: (view: ViewType) => void
-  setLoading: (loading: boolean) => void
-  setError: (error: string | null) => void
-  setMessage: (message: string | null) => void
-  clearMessages: () => void
-  loading: boolean
-  redirectTo?: RedirectTo
-}
-
-interface SocialAuthProps {
-  supabaseClient: SupabaseClient
-  providers: Provider[]
-  layout?: 'horizontal' | 'vertical'
-  redirectTo?: RedirectTo
-  setLoading: (loading: boolean) => void
-  setError: (error: string) => void
-  clearMessages: () => void
-  loading: boolean
-}
-
-interface EmailAuthProps extends SubComponentProps {
-  view: typeof VIEWS.SIGN_IN | typeof VIEWS.SIGN_UP
-  magicLink?: boolean
-  onSignUpValidate?: (email: string, password: string) => Promise<boolean>
-  metadata?: Record<string, any>
-}
-
-interface UseAuthFormReturn {
-  loading: boolean
-  error: string | null
-  message: string | null
-  setLoading: (loading: boolean) => void
-  setError: (error: string | null) => void
-  setMessage: (message: string | null) => void
-  clearMessages: () => void
-}
-
-const ProviderIcons: {
-  [key in Provider]?: React.ComponentType<{ className?: string }>
-} = {
-  github: ({ className }) => (
-    <svg
-      role="img"
-      viewBox="0 0 24 24"
-      className={className}
-      fill="currentColor"
-      dangerouslySetInnerHTML={{ __html: SimpleIcons.siGithub.svg }}
-    />
-  ),
-  google: ({ className }) => (
-    <svg
-      role="img"
-      viewBox="0 0 24 24"
-      className={className}
-      fill="currentColor"
-      dangerouslySetInnerHTML={{ __html: SimpleIcons.siGoogle.svg }}
-    />
-  ),
-}
-
-function useAuthForm(): UseAuthFormReturn {
-  const [loading, setLoading] = useState(false)
-  const [error, setErrorState] = useState<string | null>(null)
-  const [message, setMessageState] = useState<string | null>(null)
-
-  const setError = useCallback((errorMsg: string | null) => {
-    setErrorState(errorMsg)
-    if (errorMsg) setMessageState(null)
-  }, [])
-
-  const setMessage = useCallback((msg: string | null) => {
-    setMessageState(msg)
-    if (msg) setErrorState(null)
-  }, [])
-
-  const clearMessages = useCallback(() => {
-    setErrorState(null)
-    setMessageState(null)
-  }, [])
-
-  return {
-    loading,
-    error,
-    message,
-    setLoading,
-    setError,
-    setMessage,
-    clearMessages,
-  }
-}
-
-function SocialAuth({
-  supabaseClient,
-  providers,
-  layout = 'vertical',
-  redirectTo,
-  setLoading,
-  setError,
-  clearMessages,
-  loading,
-}: SocialAuthProps) {
-  const handleProviderSignIn = async (provider: Provider) => {
-    clearMessages()
-    setLoading(true)
-    const { error } = await supabaseClient.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo },
-    })
-    if (error) setError(error.message)
-  }
-
-  return (
-    <div
-      className={cn(
-        'space-y-3',
-        layout === 'horizontal' && 'flex space-y-0 space-x-3',
-      )}
-    >
-      {providers.map((provider) => {
-        const IconComponent = ProviderIcons[provider]
-        const providerName =
-          provider.charAt(0).toUpperCase() + provider.slice(1)
-        return (
-          <Button
-            key={provider}
-            variant="outline"
-            className="w-full flex items-center justify-center gap-2"
-            onClick={() => handleProviderSignIn(provider)}
-            disabled={loading}
-          >
-            {IconComponent && <IconComponent className="h-4 w-4" />}
-            {layout === 'vertical'
-              ? `Continue with ${providerName}`
-              : providerName}
-          </Button>
-        )
-      })}
-    </div>
-  )
-}
-
-interface SignInFormProps extends SubComponentProps {
-  magicLink?: boolean
-}
-
-function SignInForm({
-  supabaseClient,
-  setAuthView,
-  setLoading,
-  setError,
-  clearMessages,
-  loading,
-}: SignInFormProps) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-
-  const handleSignIn = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    clearMessages()
-    setLoading(true)
-
-    try {
-      const { error } = await supabaseClient.auth.signInWithPassword({
-        email,
-        password,
-      })
-      if (error) throw error
-    } catch (error: any) {
-      setError(error.message || 'An unexpected error occurred.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <form id="auth-sign-in" onSubmit={handleSignIn} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="email">Email address</Label>
-        <div className="relative">
-          <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            id="email"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="pl-10"
-            autoComplete="email"
-          />
-        </div>
-      </div>
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label htmlFor="password">Password</Label>
-          <Button
-            variant="link"
-            type="button"
-            onClick={() => setAuthView(VIEWS.FORGOTTEN_PASSWORD)}
-            className="p-0 h-auto font-normal text-muted-foreground text-sm"
-          >
-            Forgot your password?
-          </Button>
-        </div>
-        <div className="relative">
-          <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            id="password"
-            type="password"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="pl-10"
-            autoComplete="current-password"
-          />
-        </div>
-      </div>
-
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Sign In
-      </Button>
-    </form>
-  )
-}
-
-interface SignUpFormProps extends SubComponentProps {
-  onSignUpValidate?: (email: string, password: string) => Promise<boolean>
-  metadata?: Record<string, any>
-}
-
-function SignUpForm({
-  supabaseClient,
-  setAuthView,
-  setLoading,
-  setError,
-  setMessage,
-  clearMessages,
-  loading,
-  redirectTo,
-  onSignUpValidate,
-  metadata,
-}: SignUpFormProps) {
+export function Auth({ onClose }: AuthProps) {
+  const [isLoading, setIsLoading] = useState(false)
+  const [isSocialLoading, setIsSocialLoading] = useState<'google' | null>(null)
+  const [activeTab, setActiveTab] = useState<'signin' | 'signup' | 'reset'>('signin')
+  
+  // Form states
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
+  
+  // Phone auth states
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [verificationCode, setVerificationCode] = useState('')
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null)
+  const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null)
+  
+  const posthog = usePostHog()
 
-  const handleSignUp = async (e: React.FormEvent<HTMLFormElement>) => {
+  if (!isFirebaseEnabled || !auth) {
+    return (
+      <div className="text-center p-4">
+        <p className="text-muted-foreground">Authentication is not enabled.</p>
+      </div>
+    )
+  }
+
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
-    clearMessages()
-    setLoading(true)
+    setIsLoading(true)
 
     try {
-      if (password !== confirmPassword) {
-        throw new Error('Passwords do not match')
-      }
-      if (onSignUpValidate) {
-        const isValid = await onSignUpValidate(email, password)
-        if (!isValid) {
-          throw new Error(
-            'Invalid email address. Please use a different email.',
-          )
+      const userCredential = await signInWithEmailAndPassword(auth, email, password)
+      
+      posthog?.capture('user_signed_in', {
+        method: 'email',
+        user_id: userCredential.user.uid
+      })
+      
+      toast({
+        title: 'Welcome back!',
+        description: 'You have successfully signed in.',
+      })
+      
+      // Give Firebase time to update auth state before closing
+      setTimeout(() => {
+        onClose?.()
+      }, 100)
+    } catch (error: any) {
+      toast({
+        title: 'Sign in failed',
+        description: error.message || 'Please check your credentials and try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (password !== confirmPassword) {
+      toast({
+        title: 'Passwords do not match',
+        description: 'Please make sure your passwords match.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      // Validate email if ZeroBounce is configured
+      if (process.env.NEXT_PUBLIC_ZEROBOUNCE_API_KEY) {
+        const validation = await validateEmail(email)
+        if (!validation.isValid) {
+          toast({
+            title: 'Invalid email',
+            description: validation.error || 'Please use a valid email address.',
+            variant: 'destructive',
+          })
+          setIsLoading(false)
+          return
         }
       }
-      const { data, error } = await supabaseClient.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: redirectTo,
-          data: metadata,
-        },
-      })
-      if (error) throw error
-      if (data.user && !data.session) {
-        setMessage('Check your email for the confirmation link.')
+
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password)
+      
+      // Update display name if needed
+      if (userCredential.user && !userCredential.user.displayName) {
+        await updateProfile(userCredential.user, {
+          displayName: email.split('@')[0]
+        })
       }
+      
+      posthog?.capture('user_signed_up', {
+        method: 'email',
+        user_id: userCredential.user.uid
+      })
+      
+      toast({
+        title: 'Account created!',
+        description: 'Welcome to Fragments.',
+      })
+      
+      // Give Firebase time to update auth state before closing
+      setTimeout(() => {
+        onClose?.()
+      }, 100)
     } catch (error: any) {
-      setError(error.message || 'An unexpected error occurred.')
+      toast({
+        title: 'Sign up failed',
+        description: error.message || 'Please try again.',
+        variant: 'destructive',
+      })
     } finally {
-      setLoading(false)
+      setIsLoading(false)
+    }
+  }
+
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
+
+    try {
+      await sendPasswordResetEmail(auth, email)
+      
+      toast({
+        title: 'Password reset email sent',
+        description: 'Check your email for instructions to reset your password.',
+      })
+      
+      setActiveTab('signin')
+    } catch (error: any) {
+      toast({
+        title: 'Password reset failed',
+        description: error.message || 'Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleMagicLink = async () => {
+    setIsLoading(true)
+
+    try {
+      const actionCodeSettings = {
+        url: `${window.location.origin}/auth/verify`,
+        handleCodeInApp: true,
+      }
+      
+      await sendSignInLinkToEmail(auth, email, actionCodeSettings)
+      
+      // Save email for later verification
+      window.localStorage.setItem('emailForSignIn', email)
+      
+      toast({
+        title: 'Magic link sent!',
+        description: 'Check your email for the sign-in link.',
+      })
+    } catch (error: any) {
+      toast({
+        title: 'Magic link failed',
+        description: error.message || 'Please try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const setupRecaptcha = () => {
+    if (!auth || recaptchaVerifier) return
+    
+    const verifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+      size: 'invisible',
+      callback: () => {
+        // reCAPTCHA solved
+      }
+    })
+    setRecaptchaVerifier(verifier)
+    return verifier
+  }
+
+  const handlePhoneSignIn = async () => {
+    setIsLoading(true)
+
+    try {
+      const verifier = recaptchaVerifier || setupRecaptcha()
+      if (!verifier) {
+        throw new Error('Failed to initialize reCAPTCHA')
+      }
+
+      const confirmation = await signInWithPhoneNumber(auth, phoneNumber, verifier)
+      setConfirmationResult(confirmation)
+      
+      toast({
+        title: 'Verification code sent!',
+        description: 'Please enter the code sent to your phone.',
+      })
+    } catch (error: any) {
+      toast({
+        title: 'Phone sign in failed',
+        description: error.message || 'Please try again.',
+        variant: 'destructive',
+      })
+      
+      // Reset reCAPTCHA on error
+      if (recaptchaVerifier) {
+        recaptchaVerifier.clear()
+        setRecaptchaVerifier(null)
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleVerifyCode = async () => {
+    if (!confirmationResult) return
+    
+    setIsLoading(true)
+
+    try {
+      const userCredential = await confirmationResult.confirm(verificationCode)
+      
+      posthog?.capture('user_signed_in', {
+        method: 'phone',
+        user_id: userCredential.user.uid
+      })
+      
+      toast({
+        title: 'Welcome!',
+        description: 'You have successfully signed in with your phone.',
+      })
+      
+      // Give Firebase time to update auth state before closing
+      setTimeout(() => {
+        onClose?.()
+      }, 100)
+    } catch (error: any) {
+      toast({
+        title: 'Verification failed',
+        description: error.message || 'Please check the code and try again.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSocialSignIn = async (provider: 'google') => {
+    setIsSocialLoading(provider)
+
+    try {
+      if (!googleProvider) {
+        throw new Error('Google provider not initialized')
+      }
+      const authProvider = googleProvider
+      const userCredential = await signInWithPopup(auth, authProvider)
+      
+      posthog?.capture('user_signed_in', {
+        method: provider,
+        user_id: userCredential.user.uid
+      })
+      
+      toast({
+        title: 'Welcome!',
+        description: `You have successfully signed in with ${provider}.`,
+      })
+      
+      // Give Firebase time to update auth state before closing
+      setTimeout(() => {
+        onClose?.()
+      }, 100)
+    } catch (error: any) {
+      // Handle popup closed by user
+      if (error.code === 'auth/popup-closed-by-user') {
+        // Silent fail - user cancelled
+      } else {
+        toast({
+          title: `${provider} sign in failed`,
+          description: error.message || 'Please try again.',
+          variant: 'destructive',
+        })
+      }
+    } finally {
+      setIsSocialLoading(null)
     }
   }
 
   return (
-    <form id="auth-sign-up" onSubmit={handleSignUp} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="email">Email address</Label>
-        <div className="relative">
-          <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            id="email"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="pl-10"
-            autoComplete="email"
-          />
-        </div>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
-        <div className="relative">
-          <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            id="password"
-            type="password"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="pl-10"
-            autoComplete="new-password"
-          />
-        </div>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="confirm-password">Confirm Password</Label>
-        <div className="relative">
-          <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            id="confirm-password"
-            type="password"
-            placeholder="••••••••"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-            className="pl-10"
-            autoComplete="new-password"
-          />
-        </div>
-      </div>
+    <div className="w-full max-w-sm mx-auto">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="signin">Sign In</TabsTrigger>
+          <TabsTrigger value="signup">Sign Up</TabsTrigger>
+          <TabsTrigger value="reset">Reset</TabsTrigger>
+        </TabsList>
 
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Sign Up
-      </Button>
-    </form>
-  )
-}
+        <TabsContent value="signin" className="space-y-4">
+          <form onSubmit={handleSignIn} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="signin-email">Email</Label>
+              <Input
+                id="signin-email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                disabled={isLoading}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="signin-password">Password</Label>
+              <Input
+                id="signin-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={isLoading}
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                'Sign In'
+              )}
+            </Button>
+          </form>
 
-function MagicLink({
-  supabaseClient,
-  setAuthView,
-  setLoading,
-  setError,
-  setMessage,
-  clearMessages,
-  loading,
-  redirectTo,
-}: SubComponentProps) {
-  const [email, setEmail] = useState('')
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">
+                Or continue with
+              </span>
+            </div>
+          </div>
 
-  const handleMagicLinkSignIn = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    clearMessages()
-    setLoading(true)
-    const { error } = await supabaseClient.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: redirectTo,
-      },
-    })
-    if (error) setError(error.message)
-    else setMessage('Check your email for the magic link.')
-    setLoading(false)
-  }
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => handleSocialSignIn('google')}
+            disabled={isLoading || isSocialLoading !== null}
+          >
+            {isSocialLoading === 'google' ? (
+              <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Icons.google className="mr-2 h-4 w-4" />
+            )}
+            Sign in with Google
+          </Button>
 
-  return (
-    <form
-      id="auth-magic-link"
-      onSubmit={handleMagicLinkSignIn}
-      className="space-y-4"
-    >
-      <div className="space-y-2">
-        <Label htmlFor="email">Email address</Label>
-        <div className="relative">
-          <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            id="email"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="pl-10"
-            autoComplete="email"
-          />
-        </div>
-      </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Send Magic Link
-      </Button>
-    </form>
-  )
-}
+          <Button
+            variant="ghost"
+            className="w-full"
+            onClick={handleMagicLink}
+            disabled={isLoading || !email}
+          >
+            <Icons.mail className="mr-2 h-4 w-4" />
+            Send Magic Link
+          </Button>
 
-function ForgottenPassword({
-  supabaseClient,
-  setLoading,
-  setError,
-  setMessage,
-  clearMessages,
-  loading,
-  redirectTo,
-}: Omit<SubComponentProps, 'email' | 'setEmail'>) {
-  const [email, setEmail] = useState('')
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">
+                Or sign in with phone
+              </span>
+            </div>
+          </div>
 
-  const handlePasswordReset = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    clearMessages()
-    setLoading(true)
-    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-      redirectTo,
-    })
-    if (error) setError(error.message)
-    else setMessage('Check your email for password reset instructions.')
-    setLoading(false)
-  }
-
-  return (
-    <form
-      id="auth-forgot-password"
-      onSubmit={handlePasswordReset}
-      className="space-y-4"
-    >
-      <div className="space-y-2">
-        <Label htmlFor="email">Email address</Label>
-        <div className="relative">
-          <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            id="email"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="pl-10"
-            autoComplete="email"
-          />
-        </div>
-      </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Send Reset Instructions
-      </Button>
-    </form>
-  )
-}
-
-function UpdatePassword({
-  supabaseClient,
-  setLoading,
-  setError,
-  setMessage,
-  clearMessages,
-  loading,
-}: Omit<
-  SubComponentProps,
-  'setAuthView' | 'redirectTo' | 'email' | 'setEmail'
->) {
-  const [password, setPassword] = useState('')
-
-  const handlePasswordUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    clearMessages()
-    setLoading(true)
-    const { error } = await supabaseClient.auth.updateUser({ password })
-    if (error) setError(error.message)
-    else setMessage('Password updated successfully.')
-    setLoading(false)
-    if (!error) setPassword('')
-  }
-
-  return (
-    <form
-      id="auth-update-password"
-      onSubmit={handlePasswordUpdate}
-      className="space-y-4"
-    >
-      <h3 className="text-lg font-semibold">Update Password</h3>
-      <div className="space-y-2">
-        <Label htmlFor="new-password">New Password</Label>
-        <div className="relative">
-          <KeyRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            id="new-password"
-            type="password"
-            placeholder="Enter new password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="pl-10"
-            autoComplete="new-password"
-          />
-        </div>
-      </div>
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        Update Password
-      </Button>
-    </form>
-  )
-}
-
-function Auth({
-  supabaseClient,
-  socialLayout = 'vertical',
-  providers,
-  view = VIEWS.SIGN_IN,
-  redirectTo,
-  onlyThirdPartyProviders = false,
-  magicLink = false,
-  onSignUpValidate,
-  metadata,
-}: AuthProps): JSX.Element | null {
-  const [authView, setAuthView] = useState<ViewType>(view)
-  const {
-    loading,
-    error,
-    message,
-    setLoading,
-    setError,
-    setMessage,
-    clearMessages,
-  } = useAuthForm()
-
-  useEffect(() => {
-    setAuthView(view)
-    setError(null)
-    setMessage(null)
-  }, [view, setError, setMessage])
-
-  const setAuthViewAndClearMessages = useCallback(
-    (newView: ViewType) => {
-      setAuthView(newView)
-      setError(null)
-      setMessage(null)
-    },
-    [setError, setMessage],
-  )
-
-  const commonProps = {
-    supabaseClient,
-    setAuthView: setAuthViewAndClearMessages,
-    setLoading,
-    setError,
-    setMessage,
-    clearMessages,
-    loading,
-    redirectTo,
-  }
-
-  let viewComponent: React.ReactNode = null
-
-  switch (authView) {
-    case VIEWS.SIGN_IN:
-      viewComponent = <SignInForm {...commonProps} />
-      break
-    case VIEWS.SIGN_UP:
-      viewComponent = (
-        <SignUpForm
-          {...commonProps}
-          onSignUpValidate={onSignUpValidate}
-          metadata={metadata}
-        />
-      )
-      break
-    case VIEWS.FORGOTTEN_PASSWORD:
-      viewComponent = <ForgottenPassword {...commonProps} />
-      break
-    case VIEWS.MAGIC_LINK:
-      viewComponent = <MagicLink {...commonProps} />
-      break
-    case VIEWS.UPDATE_PASSWORD:
-      viewComponent = <UpdatePassword {...commonProps} />
-      break
-    default:
-      viewComponent = null
-  }
-
-  const showSocialAuth = providers && providers.length > 0
-  const showSeparator = showSocialAuth && !onlyThirdPartyProviders
-
-  return (
-    <div className="w-full space-y-4">
-      {authView === VIEWS.UPDATE_PASSWORD ? (
-        viewComponent
-      ) : (
-        <>
-          {showSocialAuth && (
-            <SocialAuth
-              supabaseClient={supabaseClient}
-              providers={providers || []}
-              layout={socialLayout}
-              redirectTo={redirectTo}
-              setLoading={setLoading}
-              setError={setError}
-              clearMessages={clearMessages}
-              loading={loading}
-            />
-          )}
-          {showSeparator && (
-            <div className="relative my-4">
-              <div className="absolute inset-0 flex items-center">
-                <Separator />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">
-                  Or continue with
-                </span>
-              </div>
+          {!confirmationResult ? (
+            <div className="space-y-2">
+              <Label htmlFor="phone">Phone Number</Label>
+              <Input
+                id="phone"
+                type="tel"
+                placeholder="+1 234 567 8900"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                disabled={isLoading}
+              />
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={handlePhoneSignIn}
+                disabled={isLoading || !phoneNumber}
+              >
+                <Phone className="mr-2 h-4 w-4" />
+                Send Verification Code
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <Label htmlFor="code">Verification Code</Label>
+              <Input
+                id="code"
+                type="text"
+                placeholder="123456"
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value)}
+                disabled={isLoading}
+              />
+              <Button
+                className="w-full"
+                onClick={handleVerifyCode}
+                disabled={isLoading || !verificationCode}
+              >
+                Verify Code
+              </Button>
             </div>
           )}
-          {!onlyThirdPartyProviders && viewComponent}
-        </>
-      )}
 
-      {!onlyThirdPartyProviders && authView !== VIEWS.UPDATE_PASSWORD && (
-        <div className="text-center text-sm space-y-1 mt-4">
-          {authView === VIEWS.SIGN_IN && (
-            <>
-              {magicLink && (
-                <Button
-                  variant="link"
-                  type="button"
-                  onClick={() => setAuthViewAndClearMessages(VIEWS.MAGIC_LINK)}
-                  className="p-0 h-auto font-normal"
-                >
-                  Sign in with magic link
-                </Button>
+          <div id="recaptcha-container"></div>
+        </TabsContent>
+
+        <TabsContent value="signup" className="space-y-4">
+          <form onSubmit={handleSignUp} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="signup-email">Email</Label>
+              <Input
+                id="signup-email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                disabled={isLoading}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="signup-password">Password</Label>
+              <Input
+                id="signup-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={isLoading}
+                minLength={6}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="signup-confirm-password">Confirm Password</Label>
+              <Input
+                id="signup-confirm-password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                disabled={isLoading}
+                minLength={6}
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+                  Creating account...
+                </>
+              ) : (
+                'Create Account'
               )}
-              <p className="text-muted-foreground">
-                Don&apos;t have an account?{' '}
-                <Button
-                  variant="link"
-                  type="button"
-                  onClick={() => setAuthViewAndClearMessages(VIEWS.SIGN_UP)}
-                  className="p-0 h-auto underline"
-                >
-                  Sign up
-                </Button>
-              </p>
-            </>
-          )}
-          {authView === VIEWS.SIGN_UP && (
-            <p className="text-muted-foreground">
-              Already have an account?{' '}
-              <Button
-                variant="link"
-                type="button"
-                onClick={() => setAuthViewAndClearMessages(VIEWS.SIGN_IN)}
-                className="p-0 h-auto underline"
-              >
-                Sign in
-              </Button>
-            </p>
-          )}
-          {authView === VIEWS.MAGIC_LINK && (
-            <Button
-              variant="link"
-              type="button"
-              onClick={() => setAuthViewAndClearMessages(VIEWS.SIGN_IN)}
-              className="p-0 h-auto font-normal"
-            >
-              Sign in with password instead
             </Button>
-          )}
-          {authView === VIEWS.FORGOTTEN_PASSWORD && (
-            <Button
-              variant="link"
-              type="button"
-              onClick={() => setAuthViewAndClearMessages(VIEWS.SIGN_IN)}
-              className="p-0 h-auto underline"
-            >
-              Back to Sign In
-            </Button>
-          )}
-        </div>
-      )}
+          </form>
+        </TabsContent>
 
-      <div className="mt-4 space-y-2">
-        {error && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-        {message && (
-          <Alert variant="default">
-            <CheckCircle2 className="h-4 w-4" />
-            <AlertTitle>Success</AlertTitle>
-            <AlertDescription>{message}</AlertDescription>
-          </Alert>
-        )}
-      </div>
+        <TabsContent value="reset" className="space-y-4">
+          <form onSubmit={handlePasswordReset} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="reset-email">Email</Label>
+              <Input
+                id="reset-email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                disabled={isLoading}
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+                  Sending reset link...
+                </>
+              ) : (
+                'Send Reset Link'
+              )}
+            </Button>
+          </form>
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }
-
-export default Auth

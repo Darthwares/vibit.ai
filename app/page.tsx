@@ -1,6 +1,5 @@
 'use client'
 
-import { ViewType } from '@/components/auth'
 import { AuthDialog } from '@/components/auth-dialog'
 import { Chat } from '@/components/chat'
 import { ChatInput } from '@/components/chat-input'
@@ -13,7 +12,6 @@ import { Message, toAISDKMessages, toMessageImage } from '@/lib/messages'
 import { LLMModelConfig } from '@/lib/models'
 import modelsList from '@/lib/models.json'
 import { FragmentSchema, fragmentSchema as schema } from '@/lib/schema'
-import { supabase } from '@/lib/supabase'
 import templates, { TemplateId } from '@/lib/templates'
 import { ExecutionResult } from '@/lib/types'
 import { DeepPartial } from 'ai'
@@ -43,10 +41,22 @@ export default function Home() {
   const [currentTab, setCurrentTab] = useState<'code' | 'fragment'>('code')
   const [isPreviewLoading, setIsPreviewLoading] = useState(false)
   const [isAuthDialogOpen, setAuthDialog] = useState(false)
-  const [authView, setAuthView] = useState<ViewType>('sign_in')
   const [isRateLimited, setIsRateLimited] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
-  const { session, userTeam } = useAuth(setAuthDialog, setAuthView)
+  const { user, loading, signOut } = useAuth()
+  const [userAccessToken, setUserAccessToken] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function fetchAccessToken() {
+      if (user) {
+        const token = await user.getIdToken()
+        setUserAccessToken(token)
+      } else {
+        setUserAccessToken(null)
+      }
+    }
+    fetchAccessToken()
+  }, [user])
 
   const filteredModels = modelsList.models.filter((model) => {
     if (process.env.NEXT_PUBLIC_HIDE_LOCAL_MODELS) {
@@ -88,9 +98,9 @@ export default function Home() {
           method: 'POST',
           body: JSON.stringify({
             fragment,
-            userID: session?.user?.id,
-            teamID: userTeam?.id,
-            accessToken: session?.access_token,
+            userID: user?.uid,
+            teamID: user?.team?.id,
+            accessToken: userAccessToken,
           }),
         })
 
@@ -151,7 +161,7 @@ export default function Home() {
   async function handleSubmitAuth(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
 
-    if (!session) {
+    if (!user) {
       return setAuthDialog(true)
     }
 
@@ -174,8 +184,8 @@ export default function Home() {
     })
 
     submit({
-      userID: session?.user?.id,
-      teamID: userTeam?.id,
+      userID: user?.uid,
+      teamID: user?.team?.id,
       messages: toAISDKMessages(updatedMessages),
       template: currentTemplate,
       model: currentModel,
@@ -194,8 +204,8 @@ export default function Home() {
 
   function retry() {
     submit({
-      userID: session?.user?.id,
-      teamID: userTeam?.id,
+      userID: user?.uid,
+      teamID: user?.team?.id,
       messages: toAISDKMessages(messages),
       template: currentTemplate,
       model: currentModel,
@@ -217,9 +227,7 @@ export default function Home() {
   }
 
   function logout() {
-    supabase
-      ? supabase.auth.signOut()
-      : console.warn('Supabase is not initialized')
+    signOut()
   }
 
   function handleLanguageModelChange(e: LLMModelConfig) {
@@ -264,20 +272,16 @@ export default function Home() {
 
   return (
     <main className="flex min-h-screen max-h-screen">
-      {supabase && (
-        <AuthDialog
-          open={isAuthDialogOpen}
-          setOpen={setAuthDialog}
-          view={authView}
-          supabase={supabase}
-        />
-      )}
+      <AuthDialog
+        open={isAuthDialogOpen}
+        setOpen={setAuthDialog}
+      />
       <div className="grid w-full md:grid-cols-2">
         <div
           className={`flex flex-col w-full max-h-full max-w-[800px] mx-auto px-4 overflow-auto ${fragment ? 'col-span-1' : 'col-span-2'}`}
         >
           <NavBar
-            session={session}
+            user={user}
             showLogin={() => setAuthDialog(true)}
             signOut={logout}
             onSocialClick={handleSocialClick}
@@ -322,8 +326,8 @@ export default function Home() {
           </ChatInput>
         </div>
         <Preview
-          teamID={userTeam?.id}
-          accessToken={session?.access_token}
+          teamID={user?.team?.id}
+          accessToken={userAccessToken}
           selectedTab={currentTab}
           onSelectedTabChange={setCurrentTab}
           isChatLoading={isLoading}

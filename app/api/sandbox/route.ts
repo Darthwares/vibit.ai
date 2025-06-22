@@ -20,25 +20,49 @@ export async function POST(req: Request) {
   } = await req.json()
   console.log('fragment', fragment)
   console.log('userID', userID)
-  // console.log('apiKey', apiKey)
+  console.log('E2B_API_KEY exists:', !!process.env.E2B_API_KEY)
+  console.log('E2B_API_KEY length:', process.env.E2B_API_KEY?.length || 0)
+
+  if (!process.env.E2B_API_KEY) {
+    console.error('E2B_API_KEY is not set in environment variables')
+    return new Response(
+      JSON.stringify({ error: 'E2B API key not configured' }),
+      { status: 500 }
+    )
+  }
 
   // Create an interpreter or a sandbox
-  const sbx = await Sandbox.create(fragment.template, {
-    metadata: {
-      template: fragment.template,
-      userID: userID ?? '',
-      teamID: teamID ?? '',
-    },
-    timeoutMs: sandboxTimeout,
-    ...(teamID && accessToken
-      ? {
-          headers: {
-            'X-Supabase-Team': teamID,
-            'X-Supabase-Token': accessToken,
-          },
-        }
-      : {}),
-  })
+  let sbx
+  try {
+    sbx = await Sandbox.create(fragment.template, {
+      apiKey: process.env.E2B_API_KEY,
+      metadata: {
+        template: fragment.template,
+        userID: userID ?? '',
+        teamID: teamID ?? '',
+      },
+      timeoutMs: sandboxTimeout,
+      ...(teamID && accessToken
+        ? {
+            headers: {
+              'X-Firebase-Team': teamID,
+              'X-Firebase-Token': accessToken,
+            },
+          }
+        : {}),
+    })
+  } catch (error: any) {
+    console.error('Sandbox creation error:', error)
+    console.error('Error details:', error.message)
+    return new Response(
+      JSON.stringify({ 
+        error: 'Failed to create sandbox',
+        details: error.message,
+        apiKeySet: !!process.env.E2B_API_KEY
+      }),
+      { status: 500 }
+    )
+  }
 
   // Install packages
   if (fragment.has_additional_dependencies) {

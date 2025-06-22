@@ -21,12 +21,12 @@ import {
   GitHubLogoIcon,
   TwitterLogoIcon,
 } from '@radix-ui/react-icons'
-import { Session } from '@supabase/supabase-js'
 import { ArrowRight, LogOut, Trash, Undo } from 'lucide-react'
 import Link from 'next/link'
+import type { FirebaseUserWithTeam } from '@/lib/firebase'
 
 export function NavBar({
-  session,
+  user,
   showLogin,
   signOut,
   onClear,
@@ -35,7 +35,7 @@ export function NavBar({
   onUndo,
   canUndo,
 }: {
-  session: Session | null
+  user: FirebaseUserWithTeam | null
   showLogin: () => void
   signOut: () => void
   onClear: () => void
@@ -44,6 +44,7 @@ export function NavBar({
   onUndo: () => void
   canUndo: boolean
 }) {
+
   return (
     <nav className="w-full flex bg-background py-4">
       <div className="flex flex-1 items-center">
@@ -98,19 +99,19 @@ export function NavBar({
             <TooltipContent>Toggle theme</TooltipContent>
           </Tooltip>
         </TooltipProvider>
-        {session ? (
+        {user ? (
           <DropdownMenu>
             <TooltipProvider>
               <Tooltip delayDuration={0}>
                 <TooltipTrigger asChild>
                   <DropdownMenuTrigger asChild>
-                    <Avatar className="w-8 h-8">
+                    <Avatar className="w-8 h-8 cursor-pointer">
                       <AvatarImage
                         src={
-                          session.user.user_metadata?.avatar_url ||
-                          'https://avatar.vercel.sh/' + session.user.email
+                          user.photoURL ||
+                          `https://avatar.vercel.sh/${user.email || user.uid}`
                         }
-                        alt={session.user.email}
+                        alt={user.displayName || user.email || 'User'}
                       />
                     </Avatar>
                   </DropdownMenuTrigger>
@@ -122,7 +123,7 @@ export function NavBar({
               <DropdownMenuLabel className="flex flex-col">
                 <span className="text-sm">My Account</span>
                 <span className="text-xs text-muted-foreground">
-                  {session.user.email}
+                  {user.email}
                 </span>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />

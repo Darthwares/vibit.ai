@@ -4,6 +4,7 @@ import { ThemeProvider as NextThemesProvider } from 'next-themes'
 import { type ThemeProviderProps } from 'next-themes/dist/types'
 import posthog from 'posthog-js'
 import { PostHogProvider as PostHogProviderJS } from 'posthog-js/react'
+import { AuthProvider } from '@/lib/auth-context'
 
 if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_ENABLE_POSTHOG) {
   posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY ?? '', {
@@ -17,9 +18,11 @@ if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_ENABLE_POSTHOG) {
 
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
   return process.env.NEXT_PUBLIC_ENABLE_POSTHOG ? (
-    <PostHogProviderJS client={posthog}>{children}</PostHogProviderJS>
+    <PostHogProviderJS client={posthog}>
+      <AuthProvider>{children}</AuthProvider>
+    </PostHogProviderJS>
   ) : (
-    children
+    <AuthProvider>{children}</AuthProvider>
   )
 }
 

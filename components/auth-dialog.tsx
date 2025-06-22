@@ -1,6 +1,5 @@
-import Auth, { ViewType } from './auth'
+import { Auth } from './auth'
 import Logo from './logo'
-import { validateEmail } from '@/app/actions/validate-email'
 import {
   Dialog,
   DialogContent,
@@ -8,18 +7,13 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog'
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden'
-import { SupabaseClient } from '@supabase/supabase-js'
 
 export function AuthDialog({
   open,
   setOpen,
-  supabase,
-  view,
 }: {
   open: boolean
   setOpen: (open: boolean) => void
-  supabase: SupabaseClient
-  view: ViewType
 }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -38,16 +32,7 @@ export function AuthDialog({
             Sign in to Fragments
           </h1>
           <div className="w-full">
-            <Auth
-              supabaseClient={supabase}
-              view={view}
-              providers={['github', 'google']}
-              socialLayout="horizontal"
-              onSignUpValidate={validateEmail}
-              metadata={{
-                is_fragments_user: true,
-              }}
-            />
+            <Auth onClose={() => setOpen(false)} />
           </div>
         </div>
       </DialogContent>

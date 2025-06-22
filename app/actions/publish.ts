@@ -19,8 +19,8 @@ export async function publish(
     ...(teamID && accessToken
       ? {
           headers: {
-            'X-Supabase-Team': teamID,
-            'X-Supabase-Token': accessToken,
+            'X-Firebase-Team': teamID,
+            'X-Firebase-Token': accessToken,
           },
         }
       : {}),

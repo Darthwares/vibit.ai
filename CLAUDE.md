@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is **Fragments by E2B** - an open-source alternative to Claude Artifacts, Vercel v0, and GPT Engineer. It's a Next.js application that enables AI-powered code generation and execution in secure sandboxes.
+This is **Vibit.ai** - an AI-powered website generation and management platform built on top of Fragments by E2B. It transforms existing websites or creates new ones using AI-powered component generation, with a focus on content-first architecture and SEO optimization.
 
 ## Essential Commands
 
@@ -27,9 +27,11 @@ npm run lint     # Run ESLint
 - **UI**: shadcn/ui components + TailwindCSS
 - **AI**: Vercel AI SDK with multi-provider support
 - **Execution**: E2B SDK for sandboxed code execution
-- **Auth**: Supabase (optional)
-- **Database**: Supabase PostgreSQL (optional)
+- **Auth**: Firebase Authentication
+- **Database**: Firebase Firestore
+- **Storage**: Firebase Storage
 - **Rate Limiting**: Upstash/Vercel KV (optional)
+- **Analytics**: PostHog
 
 ### Code Structure
 - `/app` - Next.js pages and API routes
@@ -55,6 +57,15 @@ Required environment variables (see `.env.template`):
 - `E2B_API_KEY` - Required for code execution
 - At least one LLM provider key (e.g., `OPENAI_API_KEY`)
 
+For Firebase authentication:
+- `NEXT_PUBLIC_ENABLE_FIREBASE` - Set to 'true' to enable Firebase
+- `NEXT_PUBLIC_FIREBASE_API_KEY` - Firebase API key
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` - Firebase auth domain
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID` - Firebase project ID
+- `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` - Firebase storage bucket
+- `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` - Firebase messaging sender ID
+- `NEXT_PUBLIC_FIREBASE_APP_ID` - Firebase app ID
+
 ## Adding New Features
 
 ### Adding a New LLM Provider
@@ -71,6 +82,26 @@ Required environment variables (see `.env.template`):
 ## Important Notes
 
 - No formal test suite exists - verify changes manually
-- Authentication and database features are optional
 - Rate limiting can be enabled via Upstash/Vercel KV
 - All code execution happens in E2B sandboxes for security
+
+## Authentication
+
+The project uses Firebase Authentication with support for:
+- Email/Password sign in and sign up
+- Passwordless email link (Magic Link)
+- Phone number authentication with SMS verification
+- Google OAuth sign in
+- Password reset functionality
+
+All authentication is handled through Firebase with automatic user team creation and metadata tracking.
+
+## Project Goals (from PRD)
+
+1. **Website Analysis & Reconstruction**: Crawl existing websites, extract content, and rebuild with modern architecture
+2. **AI-Powered Component Generation**: Use Claude to generate and evolve components
+3. **SEO Optimization**: Automatic implementation of comprehensive SEO best practices
+4. **Content-First Architecture**: Focus on MDX/Markdown for content management
+5. **Template Evolution**: Continuously expand component library through user interactions
+6. **Internationalization**: Built-in i18n support with automatic translations
+7. **Site Assistant**: AI-powered assistant for each generated website
